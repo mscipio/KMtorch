@@ -1,14 +1,13 @@
 
-import pycuda
-from pycuda.driver import PointerHolderBase as pycudaHolder
+import pycuda.driver as drv
 import torch
 import numpy as np
 
 __all__ = ['Holder','Utils']
 
-class Holder(pycudaHolder):
+class Holder(drv.PointerHolderBase):
     def __init__(self, t):
-        super(pycudaHolder, self).__init__()
+        super(drv.PointerHolderBase, self).__init__()
         self.t = t
         self.gpudata = t.data_ptr()
 
