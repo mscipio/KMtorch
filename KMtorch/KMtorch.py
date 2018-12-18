@@ -11,7 +11,7 @@ import os
 __all__ = ['KMtorch','LMoptimizer']
 
 class KMtorch:
-    def __init__(self, Kparams, IFparams, IF, time, dimensions = (128,128,47,20,5), activity=None,
+    def __init__(self, Kparams, IFparams, IF, time, dimensions = (128,128,47,20,5), activity=None, dk = 0.006312816,
                  mask = None, block_num=256, model='bicompartment_3expIF_4k', prior='gaussian_MRF_prior', priorargs = {}):
 
         self.Nx, self.Ny, self.Nz, self.Nt, self.Nk = dimensions
@@ -41,18 +41,19 @@ class KMtorch:
         self.IF = self.utils.checkInputs(IF)
         self.time = self.utils.checkInputs(time)
         if activity is None:
-            self.activity = torch.empty(self.volvecsize).type(torch.cuda.FloatTensor).cuda()
+            self.activity = torch.zeros(self.volvecsize).type(torch.cuda.FloatTensor).cuda()
         else:
             self.activity = self.utils.checkInputs(activity).view(self.volvecsize)
         self.activityMeas = self.activity.clone()
-        self.jac = torch.empty((self.Nv, self.Nt, self.Nk)).type(torch.cuda.FloatTensor).cuda()
+        self.jac = torch.zeros((self.Nv, self.Nt, self.Nk)).type(torch.cuda.FloatTensor).cuda()
+        print(self.jac.shape)
         if mask is None:
             self.mask = torch.ones(self.masksize).type(torch.cuda.FloatTensor).cuda()
         else:
             self.mask = self.utils.checkInputs(mask).view(self.masksize)
-        self.prior = torch.empty(self.parvecsize).type(torch.cuda.FloatTensor).cuda()
+        self.prior = torch.zeros(self.parvecsize).type(torch.cuda.FloatTensor).cuda()
 
-        self.dk = torch.Tensor([0.006312816]).type(torch.cuda.FloatTensor).cuda()
+        self.dk = torch.Tensor([dk]).type(torch.cuda.FloatTensor).cuda()
         self.checkPriorArgs(priorargs)
         print(self.priorargs)
 
@@ -69,9 +70,9 @@ class KMtorch:
                                             max_blocks_per_grid=self.grid,
                                             W=self.Ny,
                                             L=self.Nz,
-                                            T=self.Nt,
-                                            D=self.Nk,
-                                            N=self.Nv))
+                                            Nt=self.Nt,
+                                            Nk=self.Nk,
+                                            Nv=self.Nv))
         self.modelfun = mod.get_function(self.model_type)
 
         kernel_priors = open(self.cudapath + 'priors.cu').read()
@@ -92,40 +93,44 @@ class KMtorch:
             if isinstance(priorargs, dict):
                 self.priorargs = priorargs
                 if 'beta' not in self.priorargs:
-                    self.priorargs['beta'] = torch.from_numpy(np.asarray([0.1, 0.1, 0.1, 0.1, 0.1])*10**ppn).type(torch.cuda.FloatTensor).cuda()
+                    self.priorargs['beta'] = torch.from_numpy(np.asarray([0.1, 0.1, 0.1, 0.1, 0.1, 0.1])*10**ppn).type(torch.cuda.FloatTensor).cuda()
                 else:
                     self.priorargs['beta'] = self.utils.checkInputs(priorargs['beta'])*10**ppc
                 if 'gamma' not in self.priorargs:
-                    self.priorargs['gamma'] = torch.from_numpy(np.asarray([0.0, 0.0, 0.0, 0.0, 0.0])*10**ppn).type(torch.cuda.FloatTensor).cuda()
+                    self.priorargs['gamma'] = torch.from_numpy(np.asarray([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])*10**ppn).type(torch.cuda.FloatTensor).cuda()
                 else:
                     self.priorargs['gamma'] = self.utils.checkInputs(priorargs['gamma'])*10**ppc
                 if 'threshold' not in self.priorargs:
-                    self.priorargs['threshold'] = torch.from_numpy(np.asarray([1, 10, 10, 1, 0])*10**ppn).type(torch.cuda.FloatTensor).cuda()
+                    self.priorargs['threshold'] = torch.from_numpy(np.asarray([1, 10, 10, 1, 0, 0])*10**ppn).type(torch.cuda.FloatTensor).cuda()
                 else:
                     self.priorargs['threshold'] = self.utils.checkInputs(priorargs['threshold'])*10**ppc
             else:
                 self.priorargs = {}
-                self.priorargs['beta'] = torch.from_numpy(np.asarray([0.1, 0.1, 0.1, 0.1, 0.1])*10**ppn).type(torch.cuda.FloatTensor).cuda()
-                self.priorargs['gamma'] = torch.from_numpy(np.asarray([0.0, 0.0, 0.0, 0.0, 0.0])*10**ppn).type(torch.cuda.FloatTensor).cuda()
-                self.priorargs['threshold'] = torch.from_numpy(np.asarray([1, 10, 10, 1, 0])*10**ppn).type(torch.cuda.FloatTensor).cuda()
+                self.priorargs['beta'] = torch.from_numpy(np.asarray([0.1, 0.1, 0.1, 0.1, 0.1, 0.1])*10**ppn).type(torch.cuda.FloatTensor).cuda()
+                self.priorargs['gamma'] = torch.from_numpy(np.asarray([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])*10**ppn).type(torch.cuda.FloatTensor).cuda()
+                self.priorargs['threshold'] = torch.from_numpy(np.asarray([1, 10, 10, 1, 0, 0])*10**ppn).type(torch.cuda.FloatTensor).cuda()
         else:
             self.priorargs = {}
-            self.priorargs['beta'] = torch.from_numpy(np.asarray([0.1, 0.1, 0.1, 0.1, 0.1])*10**ppn).type(torch.cuda.FloatTensor).cuda()
-            self.priorargs['gamma'] = torch.from_numpy(np.asarray([0.0, 0.0, 0.0, 0.0, 0.0])*10**ppn).type(torch.cuda.FloatTensor).cuda()
-            self.priorargs['threshold'] = torch.from_numpy(np.asarray([1, 10, 10, 1, 0])*10**ppn).type(torch.cuda.FloatTensor).cuda()
+            self.priorargs['beta'] = torch.from_numpy(np.asarray([0.1, 0.1, 0.1, 0.1, 0.1, 0.1])*10**ppn).type(torch.cuda.FloatTensor).cuda()
+            self.priorargs['gamma'] = torch.from_numpy(np.asarray([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])*10**ppn).type(torch.cuda.FloatTensor).cuda()
+            self.priorargs['threshold'] = torch.from_numpy(np.asarray([1, 10, 10, 1, 0, 0])*10**ppn).type(torch.cuda.FloatTensor).cuda()
+
 
     def evaluateModel(self, auxpar=None):
         if auxpar is None:
             auxpar = self.auxpar
         else:
             auxpar = self.utils.checkInputs(auxpar)
+        a = self.activity.clone()
+        #J = self.jac.clone()
         self.modelfun(Holder(auxpar), Holder(self.IFpar),
-                      Holder(self.IF), Holder(self.time), Holder(self.activity),
+                      Holder(self.IF), Holder(self.time), Holder(a),
                       Holder(self.jac), Holder(self.dk), Holder(self.mask),
                       grid=(self.grid, 1, 1), block=(self.block, 1, 1))
         self.auxpar = auxpar
         self.kpar = self.torch_aux2par(self.auxpar, self.Nv, self.Nk)
-        return self.activity, self.jac
+        return a,self.jac
+
 
     def computePrior(self, auxpar=None):
         if auxpar is None:
@@ -146,8 +151,8 @@ class KMtorch:
             initialPoint = self.utils.checkInputs(initialPoint)
         fData = self.activityMeas.clone()
         self.activityMeas = self.activity.clone()
-        self.LMoptim = LMoptimizer(function=self.evaluateModel, priorfun = self.computePrior, useprior = useprior,
-                                   model_params=initialPoint, measure=fData, learning_rate=1.0)
+        self.LMoptim = LMoptimizer(function=self.evaluateModel, priorfun = self.computePrior,
+                                   useprior = useprior, model_params=initialPoint, measure=fData, learning_rate=1.0)
         self.LMoptim.run(maxIteration,tol)
         self.activity = self.LMoptim.f
         self.auxpar = self.LMoptim.p
@@ -176,21 +181,24 @@ class KMtorch:
     @staticmethod
     def torch_par2aux(k, voxels, params):
         eps = 1e-9
-        aux_par = torch.zeros(k.shape).reshape((voxels, params)).type(torch.cuda.FloatTensor).cuda()
-        k = k.reshape((voxels, params))
+        aux_par = torch.zeros(k.shape).view((voxels, params)).type(torch.cuda.FloatTensor).cuda()
+        k = k.view((voxels, params))
         d = torch.abs(torch.sqrt((k[:, 2] + k[:, 3] + k[:, 4]) ** 2 - 4 * k[:, 2] * k[:, 4]))
         aux_par[:, 2] = (k[:, 2] + k[:, 3] + k[:, 4] + d) / 2  # L1
         aux_par[:, 4] = (k[:, 2] + k[:, 3] + k[:, 4] - d) / 2  # L2
         aux_par[:, 1] = (k[:, 1] * (k[:, 2] - k[:, 3] - k[:, 4] + d)) / (2 * d + eps)  # B1
         aux_par[:, 3] = (k[:, 1] * (-k[:, 2] + k[:, 3] + k[:, 4] + d)) / (2 * d + eps)  # B2
         aux_par[:, 0] = k[:, 0]  # vB
+        aux_par[:, 5] = k[:, 5]  # delay
         return aux_par
 
     @staticmethod
     def torch_aux2par(aux_par, voxels, params):
+        utils = Utils()
         eps = 1e-9
-        k = torch.zeros(aux_par.shape).reshape((voxels, params)).type(torch.cuda.FloatTensor).cuda()
-        aux_par = torch.from_numpy(np.asarray(aux_par)).reshape((voxels, params)).type(torch.cuda.FloatTensor).cuda()
+        k = torch.zeros(aux_par.shape).view((voxels, params)).type(torch.cuda.FloatTensor).cuda()
+        #aux_par = torch.from_numpy(np.asarray(aux_par)).view((voxels, params)).type(torch.cuda.FloatTensor).cuda()
+        aux_par = utils.checkInputs(aux_par).view((voxels, params))
         n = aux_par[:, 1] * aux_par[:, 2] + aux_par[:, 3] * aux_par[:, 4]
         d = aux_par[:, 1] + aux_par[:, 3]
         k[:, 0] = aux_par[:, 0]  # vB
@@ -198,4 +206,5 @@ class KMtorch:
         k[:, 2] = n / (d + eps)
         k[:, 3] = (aux_par[:, 1] * aux_par[:, 3] * (aux_par[:, 2] - aux_par[:, 4]) ** 2) / (d * n + eps)
         k[:, 4] = (aux_par[:, 2] * aux_par[:, 4] * d) / (n + eps)
+        k[:, 5] = aux_par[:, 5]  # delay
         return k
